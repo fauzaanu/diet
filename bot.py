@@ -7,9 +7,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice
 from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHandler, PreCheckoutQueryHandler, ContextTypes, ConversationHandler, CallbackQueryHandler
+import urllib.parse
 
 # Diet plan constants
-WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, RESULT = range(5)
+WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, MEAL_SUGGESTION, RESULT = range(6)
 
 class Goal(Enum):
     EXTREME_WEIGHT_LOSS = auto()
@@ -170,6 +171,43 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     
     await query.edit_message_text(result)
+    
+    # Move to meal suggestion quiz
+    protein_sources = [
+        ("Chicken 🍗", "chicken"),
+        ("Beef 🥩", "beef"),
+        ("Fish 🐟", "fish"),
+        ("Eggs 🥚", "eggs"),
+        ("Tofu 🧊", "tofu"),
+        ("Beans 🫘", "beans"),
+    ]
+    keyboard = [[InlineKeyboardButton(source[0], callback_data=source[1])] for source in protein_sources]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text="Now, let's find some meal ideas! 🍽️\nWhat's your favorite protein source?",
+        reply_markup=reply_markup,
+    )
+    return MEAL_SUGGESTION
+
+async def meal_suggestion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    protein_source = query.data
+    
+    # Create search query
+    search_query = f"{protein_source} recipes for {context.user_data['state'].goal.name.lower().replace('_', ' ')}"
+    encoded_query = urllib.parse.quote(search_query)
+    search_url = f"https://www.google.com/search?q={encoded_query}"
+    
+    keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"Great choice! 👨‍🍳 I've prepared a search for {protein_source} recipes that match your goals.\n"
+        f"Click the button below to find delicious meal ideas:",
+        reply_markup=reply_markup,
+    )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -250,6 +288,7 @@ if __name__ == '__main__':
             WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, weight)],
             GOAL: [CallbackQueryHandler(goal)],
             LEVEL: [CallbackQueryHandler(level)],
+            MEAL_SUGGESTION: [CallbackQueryHandler(meal_suggestion)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
