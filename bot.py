@@ -84,12 +84,13 @@ def init_db():
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     keyboard = [
-        [InlineKeyboardButton("kg", callback_data="kg"),
-         InlineKeyboardButton("lbs", callback_data="lbs")]
+        [InlineKeyboardButton("kg 🇪🇺", callback_data="kg"),
+         InlineKeyboardButton("lbs 🇺🇸", callback_data="lbs")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "Welcome to the Diet Plan Bot! Let's create a personalized plan based on Alex Hormozi's method.\n\n"
+        "👋 Welcome to the Diet Plan Bot! 🥗💪\n\n"
+        "Let's create a personalized plan based on Alex Hormozi's method.\n\n"
         "First, please choose your preferred weight unit:",
         reply_markup=reply_markup,
     )
@@ -102,7 +103,7 @@ async def weight_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     user_state = context.user_data['state']
     user_state.weight_unit = query.data
     await query.edit_message_text(
-        f"Great! Now, please enter your weight in {user_state.weight_unit}:"
+        f"Great! 👍 Now, please enter your weight in {user_state.weight_unit}:"
     )
     return WEIGHT
 
@@ -111,14 +112,20 @@ async def weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_state.weight = float(update.message.text)
     except ValueError:
-        await update.message.reply_text("Please enter a valid number for your weight.")
+        await update.message.reply_text("⚠️ Please enter a valid number for your weight.")
         return WEIGHT
 
-    goals = [goal.name.replace('_', ' ').title() for goal in Goal]
-    keyboard = [[InlineKeyboardButton(goal, callback_data=goal)] for goal in goals]
+    goals = [
+        ("Extreme Weight Loss 🏋️‍♂️", "EXTREME_WEIGHT_LOSS"),
+        ("Moderate Weight Loss 🚶‍♂️", "MODERATE_WEIGHT_LOSS"),
+        ("Maintenance 🧘‍♂️", "MAINTENANCE"),
+        ("Moderate Weight Gain 🍽️", "MODERATE_WEIGHT_GAIN"),
+        ("Extreme Weight Gain 💪", "EXTREME_WEIGHT_GAIN")
+    ]
+    keyboard = [[InlineKeyboardButton(goal[0], callback_data=goal[1])] for goal in goals]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "What's your goal?",
+        "Great! 🎯 What's your goal?",
         reply_markup=reply_markup,
     )
     return GOAL
@@ -127,13 +134,13 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     user_state = context.user_data['state']
-    user_state.goal = Goal[query.data.replace(' ', '_').upper()]
+    user_state.goal = Goal[query.data]
     
     levels = GOAL_LEVELS[user_state.goal]
-    keyboard = [[InlineKeyboardButton(f"Level {level}", callback_data=str(level)) for level in levels]]
+    keyboard = [[InlineKeyboardButton(f"Level {level} {'🔥' * level}", callback_data=str(level)) for level in levels]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        f"Choose an intensity level for {user_state.goal.name.replace('_', ' ').title()}:",
+        f"Awesome choice! 🌟 Now, choose an intensity level for {user_state.goal.name.replace('_', ' ').title()}:",
         reply_markup=reply_markup,
     )
     return LEVEL
@@ -154,11 +161,12 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     protein = round(weight_in_lbs)
     
     result = (
-        f"Here's your personalized diet plan:\n\n"
-        f"Daily Calorie Target: {calories} calories\n"
-        f"Daily Protein Target: {protein}g\n\n"
-        f"Remember to distribute your calories and protein throughout the day. "
-        f"You can adjust your meals based on your preferences, as long as you meet these targets."
+        f"🎉 Congratulations! Here's your personalized diet plan:\n\n"
+        f"🍽️ Daily Calorie Target: {calories} calories\n"
+        f"🥩 Daily Protein Target: {protein}g\n\n"
+        f"💡 Remember to distribute your calories and protein throughout the day. "
+        f"You can adjust your meals based on your preferences, as long as you meet these targets.\n\n"
+        f"Good luck on your journey! 💪🌟"
     )
     
     await query.edit_message_text(result)
@@ -166,7 +174,7 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
-        "Diet plan creation cancelled. Type /start to begin again."
+        "Diet plan creation cancelled. 😔 Type /start to begin again when you're ready! 🚀"
     )
     return ConversationHandler.END
 
