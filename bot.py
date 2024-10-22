@@ -5,8 +5,8 @@ from enum import Enum, auto
 from datetime import datetime
 
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, LabeledPrice
-from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHandler, PreCheckoutQueryHandler, ContextTypes, ConversationHandler
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice
+from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHandler, PreCheckoutQueryHandler, ContextTypes, ConversationHandler, CallbackQueryHandler
 
 # Diet plan constants
 WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, RESULT = range(5)
@@ -83,21 +83,26 @@ def init_db():
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    reply_keyboard = [['kg', 'lbs']]
+    keyboard = [
+        [InlineKeyboardButton("kg", callback_data="kg"),
+         InlineKeyboardButton("lbs", callback_data="lbs")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "Welcome to the Diet Plan Bot! Let's create a personalized plan based on Alex Hormozi's method.\n\n"
         "First, please choose your preferred weight unit:",
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True),
+        reply_markup=reply_markup,
     )
     context.user_data['state'] = UserState(user_id)
     return WEIGHT_UNIT
 
 async def weight_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
     user_state = context.user_data['state']
-    user_state.weight_unit = update.message.text
-    await update.message.reply_text(
-        f"Great! Now, please enter your weight in {user_state.weight_unit}:",
-        reply_markup=ReplyKeyboardRemove(),
+    user_state.weight_unit = query.data
+    await query.edit_message_text(
+        f"Great! Now, please enter your weight in {user_state.weight_unit}:"
     )
     return WEIGHT
 
@@ -110,28 +115,34 @@ async def weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return WEIGHT
 
     goals = [goal.name.replace('_', ' ').title() for goal in Goal]
-    reply_keyboard = [[goal] for goal in goals]
+    keyboard = [[InlineKeyboardButton(goal, callback_data=goal)] for goal in goals]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "What's your goal?",
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True),
+        reply_markup=reply_markup,
     )
     return GOAL
 
 async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
     user_state = context.user_data['state']
-    user_state.goal = Goal[update.message.text.replace(' ', '_').upper()]
+    user_state.goal = Goal[query.data.replace(' ', '_').upper()]
     
     levels = GOAL_LEVELS[user_state.goal]
-    reply_keyboard = [[f"Level {level}" for level in levels]]
-    await update.message.reply_text(
+    keyboard = [[InlineKeyboardButton(f"Level {level}", callback_data=str(level)) for level in levels]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
         f"Choose an intensity level for {user_state.goal.name.replace('_', ' ').title()}:",
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True),
+        reply_markup=reply_markup,
     )
     return LEVEL
 
 async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
     user_state = context.user_data['state']
-    user_state.level = int(update.message.text)
+    user_state.level = int(query.data)
     
     # Save user data to the database
     user_state.save_to_db()
@@ -150,7 +161,7 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"You can adjust your meals based on your preferences, as long as you meet these targets."
     )
     
-    await update.message.reply_text(result, reply_markup=ReplyKeyboardRemove())
+    await query.edit_message_text(result)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -228,10 +239,10 @@ if __name__ == '__main__':
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start_command)],
         states={
-            WEIGHT_UNIT: [MessageHandler(filters.Regex('^(kg|lbs)$'), weight_unit)],
+            WEIGHT_UNIT: [CallbackQueryHandler(weight_unit, pattern='^(kg|lbs)$')],
             WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, weight)],
-            GOAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, goal)],
-            LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, level)],
+            GOAL: [CallbackQueryHandler(goal)],
+            LEVEL: [CallbackQueryHandler(level)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
