@@ -190,6 +190,12 @@ async def process_favorite_foods(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("It seems you haven't entered any foods. Please try again!")
         return FAVORITE_FOODS
 
+    # Calculate calories and protein targets
+    weight_in_lbs = user_state.weight if user_state.weight_unit == 'lbs' else user_state.weight * 2.20462
+    multiplier = LEVEL_MULTIPLIERS[user_state.goal][user_state.level]
+    calories = round(weight_in_lbs * multiplier)
+    protein = round(weight_in_lbs)
+
     # Create ChatGPT prompt
     prompt = f"Here is a list of my favorite foods:\n{', '.join(favorite_foods)}\n\n"
     prompt += f"Please help me plan meals for my day based on these foods. "
