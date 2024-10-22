@@ -1,16 +1,16 @@
-[tool.poetry]
-name = "telegram-stars-starter"
+[project]
+name = "diet"
 version = "0.1.0"
-description = "Telegram stars starter template"
-authors = ["fauzaanu <fauzaangasim@gmail.com>"]
+description = "Add your description here"
 readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv>=1.0.1",
+    "python-telegram-bot[job-queue]>=21.6",
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-python-telegram-bot = "^21.3"
-python-dotenv = "^1.0.1"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+dev-dependencies = [
+    "aider-chat>=0.59.1",
+    "ruff>=0.7.0",
+]
