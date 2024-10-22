@@ -10,7 +10,7 @@ from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHan
 import urllib.parse
 
 # Diet plan constants
-WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, MEAL_SUGGESTION, RESULT = range(6)
+WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, MEAL_SUGGESTION, PROCESS_POLL, RESULT = range(7)
 
 class Goal(Enum):
     EXTREME_WEIGHT_LOSS = auto()
@@ -181,7 +181,7 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Tofu 🧊",
         "Beans 🫘",
     ]
-    await context.bot.send_poll(
+    sent_poll = await context.bot.send_poll(
         chat_id=query.message.chat_id,
         question="Now, let's find some meal ideas! 🍽️\nWhat are your favorite protein sources? (You can choose multiple)",
         options=protein_sources,
@@ -189,11 +189,36 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         allows_multiple_answers=True,
         type=Poll.REGULAR,
     )
+    
+    # Store the poll message id for later use
+    context.user_data['poll_message_id'] = sent_poll.message_id
+    
+    # Send a "Continue" button
+    keyboard = [[InlineKeyboardButton("Continue ➡️", callback_data="continue_after_poll")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text="After you've made your selections, click 'Continue' to proceed.",
+        reply_markup=reply_markup
+    )
+    
     return MEAL_SUGGESTION
 
-async def meal_suggestion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    poll_answer = update.poll_answer
-    selected_options = [context.bot_data['protein_sources'][i] for i in poll_answer.option_ids]
+async def process_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    # Get the poll results
+    poll_message = await context.bot.get_poll(
+        chat_id=query.message.chat_id,
+        message_id=context.user_data['poll_message_id']
+    )
+    
+    selected_options = [option.text for option in poll_message.options if option.voter_count > 0]
+    
+    if not selected_options:
+        await query.edit_message_text("It seems you haven't selected any protein sources. Let's try again!")
+        return MEAL_SUGGESTION
     
     # Create search query
     search_query = f"{' '.join(selected_options)} recipes for {context.user_data['state'].goal.name.lower().replace('_', ' ')}"
@@ -203,8 +228,7 @@ async def meal_suggestion(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await context.bot.send_message(
-        chat_id=poll_answer.user.id,
+    await query.edit_message_text(
         text=f"Great choices! 👨‍🍳 I've prepared a search for recipes with {', '.join(selected_options)} that match your goals.\n"
              f"Click the button below to find delicious meal ideas:",
         reply_markup=reply_markup,
@@ -289,7 +313,7 @@ if __name__ == '__main__':
             WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, weight)],
             GOAL: [CallbackQueryHandler(goal)],
             LEVEL: [CallbackQueryHandler(level)],
-            MEAL_SUGGESTION: [PollHandler(meal_suggestion)],
+            MEAL_SUGGESTION: [CallbackQueryHandler(process_poll, pattern='^continue_after_poll$')],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
