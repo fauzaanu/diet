@@ -166,8 +166,7 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
-        "Diet plan creation cancelled. Type /start to begin again.", 
-        reply_markup=ReplyKeyboardRemove()
+        "Diet plan creation cancelled. Type /start to begin again."
     )
     return ConversationHandler.END
 
