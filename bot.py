@@ -19,11 +19,19 @@ class Goal(Enum):
     EXTREME_WEIGHT_GAIN = auto()
 
 GOAL_LEVELS = {
-    Goal.EXTREME_WEIGHT_LOSS: [7, 8, 9],
-    Goal.MODERATE_WEIGHT_LOSS: [10, 11, 12],
-    Goal.MAINTENANCE: [13, 14, 15],
-    Goal.MODERATE_WEIGHT_GAIN: [16, 17, 18],
-    Goal.EXTREME_WEIGHT_GAIN: [19, 20, 21]
+    Goal.EXTREME_WEIGHT_LOSS: [1, 2, 3],
+    Goal.MODERATE_WEIGHT_LOSS: [1, 2, 3],
+    Goal.MAINTENANCE: [1, 2, 3],
+    Goal.MODERATE_WEIGHT_GAIN: [1, 2, 3],
+    Goal.EXTREME_WEIGHT_GAIN: [1, 2, 3]
+}
+
+LEVEL_MULTIPLIERS = {
+    Goal.EXTREME_WEIGHT_LOSS: {1: 7, 2: 8, 3: 9},
+    Goal.MODERATE_WEIGHT_LOSS: {1: 10, 2: 11, 3: 12},
+    Goal.MAINTENANCE: {1: 13, 2: 14, 3: 15},
+    Goal.MODERATE_WEIGHT_GAIN: {1: 16, 2: 17, 3: 18},
+    Goal.EXTREME_WEIGHT_GAIN: {1: 19, 2: 20, 3: 21}
 }
 
 class UserState:
@@ -114,9 +122,9 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_state.goal = Goal[update.message.text.replace(' ', '_').upper()]
     
     levels = GOAL_LEVELS[user_state.goal]
-    reply_keyboard = [[str(level)] for level in levels]
+    reply_keyboard = [[f"Level {level}" for level in levels]]
     await update.message.reply_text(
-        f"Choose a level for {user_state.goal.name.replace('_', ' ').title()}:",
+        f"Choose an intensity level for {user_state.goal.name.replace('_', ' ').title()}:",
         reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True),
     )
     return LEVEL
@@ -130,7 +138,8 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     # Calculate the diet plan
     weight_in_lbs = user_state.weight if user_state.weight_unit == 'lbs' else user_state.weight * 2.20462
-    calories = round(weight_in_lbs * user_state.level)
+    multiplier = LEVEL_MULTIPLIERS[user_state.goal][user_state.level]
+    calories = round(weight_in_lbs * multiplier)
     protein = round(weight_in_lbs)
     
     result = (
