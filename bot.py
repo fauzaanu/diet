@@ -1,6 +1,8 @@
 import logging
 import os
+import sqlite3
 from enum import Enum, auto
+from datetime import datetime
 
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, LabeledPrice
@@ -25,26 +27,61 @@ GOAL_LEVELS = {
 }
 
 class UserState:
-    def __init__(self):
+    def __init__(self, user_id):
+        self.user_id = user_id
         self.weight_unit = None
         self.weight = None
         self.goal = None
         self.level = None
+
+    def save_to_db(self):
+        conn = sqlite3.connect('diet_bot.db')
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO users
+                     (user_id, weight_unit, weight, goal, level, last_updated)
+                     VALUES (?, ?, ?, ?, ?, ?)''',
+                  (self.user_id, self.weight_unit, self.weight,
+                   self.goal.name if self.goal else None, self.level,
+                   datetime.now()))
+        conn.commit()
+        conn.close()
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
+def init_db():
+    conn = sqlite3.connect('diet_bot.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (user_id INTEGER PRIMARY KEY,
+                  weight_unit TEXT,
+                  weight REAL,
+                  goal TEXT,
+                  level INTEGER,
+                  last_updated TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS payments
+                 (payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id INTEGER,
+                  amount REAL,
+                  currency TEXT,
+                  telegram_payment_charge_id TEXT,
+                  timestamp TIMESTAMP,
+                  FOREIGN KEY (user_id) REFERENCES users (user_id))''')
+    conn.commit()
+    conn.close()
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
     reply_keyboard = [['kg', 'lbs']]
     await update.message.reply_text(
         "Welcome to the Diet Plan Bot! Let's create a personalized plan based on Alex Hormozi's method.\n\n"
         "First, please choose your preferred weight unit:",
         reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True),
     )
-    context.user_data['state'] = UserState()
+    context.user_data['state'] = UserState(user_id)
     return WEIGHT_UNIT
 
 async def weight_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -87,6 +124,9 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_state = context.user_data['state']
     user_state.level = int(update.message.text)
+    
+    # Save user data to the database
+    user_state.save_to_db()
     
     # Calculate the diet plan
     weight_in_lbs = user_state.weight if user_state.weight_unit == 'lbs' else user_state.weight * 2.20462
@@ -134,14 +174,23 @@ async def precheckout_callback(update, context):
         await query.answer(ok=True)
 
 
-async def successful_payment_callback(update, context):
-    """
-    This is recieved on successful payment.
-    chargeback id can be found by clicking the service message in the chat. (if you are testing).
-    This is a good place to store the charg id in your database and to process your internal balance
-    or subscription logic.
-    """
-    print(update.message.successful_payment)
+async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    payment = update.message.successful_payment
+    user_id = update.effective_user.id
+    amount = payment.total_amount / 100  # Convert from cents to dollars
+    currency = payment.currency
+    charge_id = payment.telegram_payment_charge_id
+
+    conn = sqlite3.connect('diet_bot.db')
+    c = conn.cursor()
+    c.execute('''INSERT INTO payments
+                 (user_id, amount, currency, telegram_payment_charge_id, timestamp)
+                 VALUES (?, ?, ?, ?, ?)''',
+              (user_id, amount, currency, charge_id, datetime.now()))
+    conn.commit()
+    conn.close()
+
+    await update.message.reply_text(f"Thank you for your donation of {amount} {currency}!")
 
 
 async def refund_payment(update, context):
@@ -163,6 +212,7 @@ async def refund_payment(update, context):
 if __name__ == '__main__':
     load_dotenv()
     token = os.environ['TELEGRAM_BOT_TOKEN']
+    init_db()
     application = ApplicationBuilder().token(token).build()
 
     # Add conversation handler
