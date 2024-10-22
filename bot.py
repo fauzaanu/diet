@@ -191,9 +191,13 @@ async def process_favorite_foods(update: Update, context: ContextTypes.DEFAULT_T
         return FAVORITE_FOODS
 
     # Create search query
+    # "Here is a list of my favourite foods:
+    # [foods]
+    # please help me plan the meals for my day based on these foods
+    # I have the following constrains:
     search_query = f"{' '.join(favorite_foods)} recipes for {user_state.goal.name.lower().replace('_', ' ')}"
     encoded_query = urllib.parse.quote(search_query)
-    search_url = f"https://www.google.com/search?q={encoded_query}"
+    search_url = f"https://www.chatgpt.com/search?q={encoded_query}"
 
     keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
