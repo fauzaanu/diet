@@ -2,7 +2,7 @@ import logging
 import os
 import sqlite3
 from enum import Enum, auto
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice, Poll
@@ -11,6 +11,9 @@ import urllib.parse
 
 # Diet plan constants
 WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, MEAL_SUGGESTION, PROCESS_POLL, RESULT = range(7)
+
+# Poll timeout in seconds
+POLL_TIMEOUT = 60
 
 class Goal(Enum):
     EXTREME_WEIGHT_LOSS = auto()
@@ -190,15 +193,19 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         type=Poll.REGULAR,
     )
     
-    # Store the poll message id for later use
+    # Store the poll message id and chat id for later use
     context.user_data['poll_message_id'] = sent_poll.message_id
+    context.user_data['chat_id'] = query.message.chat_id
+    
+    # Set up a job to stop the poll after the timeout
+    context.job_queue.run_once(stop_poll, POLL_TIMEOUT, context=context.user_data)
     
     # Send a "Continue" button
     keyboard = [[InlineKeyboardButton("Continue ➡️", callback_data="continue_after_poll")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text="After you've made your selections, click 'Continue' to proceed.",
+        text=f"After you've made your selections, click 'Continue' to proceed. The poll will automatically close in {POLL_TIMEOUT} seconds.",
         reply_markup=reply_markup
     )
     
@@ -208,32 +215,46 @@ async def process_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     query = update.callback_query
     await query.answer()
     
+    try:
+        # Try to stop the poll if it's still active
+        await context.bot.stop_poll(
+            chat_id=context.user_data['chat_id'],
+            message_id=context.user_data['poll_message_id']
+        )
+    except Exception as e:
+        logging.info(f"Poll already closed or error occurred: {e}")
+    
     # Get the poll results
-    poll_message = await context.bot.get_poll(
-        chat_id=query.message.chat_id,
-        message_id=context.user_data['poll_message_id']
-    )
-    
-    selected_options = [option.text for option in poll_message.options if option.voter_count > 0]
-    
-    if not selected_options:
-        await query.edit_message_text("It seems you haven't selected any protein sources. Let's try again!")
-        return MEAL_SUGGESTION
-    
-    # Create search query
-    search_query = f"{' '.join(selected_options)} recipes for {context.user_data['state'].goal.name.lower().replace('_', ' ')}"
-    encoded_query = urllib.parse.quote(search_query)
-    search_url = f"https://www.google.com/search?q={encoded_query}"
-    
-    keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        text=f"Great choices! 👨‍🍳 I've prepared a search for recipes with {', '.join(selected_options)} that match your goals.\n"
-             f"Click the button below to find delicious meal ideas:",
-        reply_markup=reply_markup,
-    )
-    return ConversationHandler.END
+    try:
+        poll_message = await context.bot.get_poll(
+            chat_id=context.user_data['chat_id'],
+            message_id=context.user_data['poll_message_id']
+        )
+        
+        selected_options = [option.text for option in poll_message.options if option.voter_count > 0]
+        
+        if not selected_options:
+            await query.edit_message_text("It seems you haven't selected any protein sources. Let's try again!")
+            return MEAL_SUGGESTION
+        
+        # Create search query
+        search_query = f"{' '.join(selected_options)} recipes for {context.user_data['state'].goal.name.lower().replace('_', ' ')}"
+        encoded_query = urllib.parse.quote(search_query)
+        search_url = f"https://www.google.com/search?q={encoded_query}"
+        
+        keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            text=f"Great choices! 👨‍🍳 I've prepared a search for recipes with {', '.join(selected_options)} that match your goals.\n"
+                 f"Click the button below to find delicious meal ideas:",
+            reply_markup=reply_markup,
+        )
+        return ConversationHandler.END
+    except Exception as e:
+        logging.error(f"Error processing poll results: {e}")
+        await query.edit_message_text("Sorry, there was an error processing your selections. Please try again later.")
+        return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -343,3 +364,16 @@ if __name__ == '__main__':
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
 
     application.run_polling()
+async def stop_poll(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.context['chat_id']
+    poll_message_id = job.context['poll_message_id']
+    
+    try:
+        poll = await context.bot.stop_poll(
+            chat_id=chat_id,
+            message_id=poll_message_id
+        )
+        logging.info(f"Poll stopped: {poll}")
+    except Exception as e:
+        logging.error(f"Error stopping poll: {e}")
