@@ -139,7 +139,7 @@ async def goal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
     user_state = context.user_data['state']
     user_state.goal = Goal[query.data]
-    
+
     levels = GOAL_LEVELS[user_state.goal]
     keyboard = [[InlineKeyboardButton(f"Level {level} {'🔥' * level}", callback_data=str(level)) for level in levels]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -154,16 +154,16 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
     user_state = context.user_data['state']
     user_state.level = int(query.data)
-    
+
     # Save user data to the database
     user_state.save_to_db()
-    
+
     # Calculate the diet plan
     weight_in_lbs = user_state.weight if user_state.weight_unit == 'lbs' else user_state.weight * 2.20462
     multiplier = LEVEL_MULTIPLIERS[user_state.goal][user_state.level]
     calories = round(weight_in_lbs * multiplier)
     protein = round(weight_in_lbs)
-    
+
     result = (
         f"🎉 Congratulations! Here's your personalized diet plan:\n\n"
         f"🍽️ Daily Calorie Target: {calories} calories\n"
@@ -172,9 +172,9 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"You can adjust your meals based on your preferences, as long as you meet these targets.\n\n"
         f"Good luck on your journey! 💪🌟"
     )
-    
+
     await query.edit_message_text(result)
-    
+
     # Move to meal suggestion poll
     protein_sources = [
         "Chicken 🍗",
@@ -192,14 +192,14 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         allows_multiple_answers=True,
         type=Poll.REGULAR,
     )
-    
+
     # Store the poll message id and chat id for later use
     context.user_data['poll_message_id'] = sent_poll.message_id
     context.user_data['chat_id'] = query.message.chat_id
-    
+
     # Set up a job to stop the poll after the timeout
     context.job_queue.run_once(stop_poll, POLL_TIMEOUT, context=context.user_data)
-    
+
     # Send a "Continue" button
     keyboard = [[InlineKeyboardButton("Continue ➡️", callback_data="continue_after_poll")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -208,13 +208,13 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         text=f"After you've made your selections, click 'Continue' to proceed. The poll will automatically close in {POLL_TIMEOUT} seconds.",
         reply_markup=reply_markup
     )
-    
+
     return MEAL_SUGGESTION
 
 async def process_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    
+
     try:
         # Try to stop the poll if it's still active
         await context.bot.stop_poll(
@@ -223,28 +223,28 @@ async def process_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
     except Exception as e:
         logging.info(f"Poll already closed or error occurred: {e}")
-    
+
     # Get the poll results
     try:
         poll_message = await context.bot.get_poll(
             chat_id=context.user_data['chat_id'],
             message_id=context.user_data['poll_message_id']
         )
-        
+
         selected_options = [option.text for option in poll_message.options if option.voter_count > 0]
-        
+
         if not selected_options:
             await query.edit_message_text("It seems you haven't selected any protein sources. Let's try again!")
             return MEAL_SUGGESTION
-        
+
         # Create search query
         search_query = f"{' '.join(selected_options)} recipes for {context.user_data['state'].goal.name.lower().replace('_', ' ')}"
         encoded_query = urllib.parse.quote(search_query)
         search_url = f"https://www.google.com/search?q={encoded_query}"
-        
+
         keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         await query.edit_message_text(
             text=f"Great choices! 👨‍🍳 I've prepared a search for recipes with {', '.join(selected_options)} that match your goals.\n"
                  f"Click the button below to find delicious meal ideas:",
@@ -319,10 +319,21 @@ async def refund_payment(update, context):
             text=f'Your payment {db.telegram_charge_id} has been refunded successfully.'
         )
 
+async def stop_poll(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.context["chat_id"]
+    poll_message_id = job.context["poll_message_id"]
 
-if __name__ == '__main__':
+    try:
+        poll = await context.bot.stop_poll(chat_id=chat_id, message_id=poll_message_id)
+        logging.info(f"Poll stopped: {poll}")
+    except Exception as e:
+        logging.error(f"Error stopping poll: {e}")
+
+
+if __name__ == "__main__":
     load_dotenv()
-    token = os.environ['TELEGRAM_BOT_TOKEN']
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
     init_db()
     application = ApplicationBuilder().token(token).build()
 
@@ -364,16 +375,4 @@ if __name__ == '__main__':
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
 
     application.run_polling()
-async def stop_poll(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    chat_id = job.context['chat_id']
-    poll_message_id = job.context['poll_message_id']
-    
-    try:
-        poll = await context.bot.stop_poll(
-            chat_id=chat_id,
-            message_id=poll_message_id
-        )
-        logging.info(f"Poll stopped: {poll}")
-    except Exception as e:
-        logging.error(f"Error stopping poll: {e}")
+
