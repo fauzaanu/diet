@@ -112,17 +112,17 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-async def send_invoice(update, context):
+async def send_donate_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_invoice(
         chat_id=update.message.chat.id,
-        title='Sample Invoice',
-        description='This is a sample invoice',
-        payload='WPBOT-PYLD',
-        currency='XTR',
+        title='Donate to Diet Plan Bot',
+        description='Support the development of the Diet Plan Bot',
+        payload='DIETBOT-DONATE',
+        currency='USD',
         prices=[
-            LabeledPrice('Basic', 100)
+            LabeledPrice('Donation', 500)  # $5.00
         ],
-        provider_token='',
+        provider_token=os.environ['PAYMENT_PROVIDER_TOKEN'],
     )
 
 
@@ -180,11 +180,11 @@ if __name__ == '__main__':
     application.add_handler(conv_handler)
 
     # Keep other handlers
-    invoice = CommandHandler('invoice', send_invoice)
+    donate = CommandHandler('donate', send_donate_invoice)
     refund = CommandHandler('refund', refund_payment)
     successful_payment = MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback)
 
-    application.add_handler(invoice)
+    application.add_handler(donate)
     application.add_handler(refund)
     application.add_handler(successful_payment)
 
