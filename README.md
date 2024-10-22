@@ -23,6 +23,7 @@ The bot is complete as of now but I thought of adding some more stuff
 
 6. User inputs their favorite foods
 7. The bot generates a ChatGPT prompt for meal planning based on his calculated calories and favourite foods
+8. A link button is sent with the prompt in the query string. (clicking it starts the chat and sends the preloaded message to chatgpt)
 
 ## Setup
 
