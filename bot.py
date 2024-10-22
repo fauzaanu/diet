@@ -5,8 +5,8 @@ from enum import Enum, auto
 from datetime import datetime
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice
-from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHandler, PreCheckoutQueryHandler, ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice, Poll
+from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHandler, PreCheckoutQueryHandler, ContextTypes, ConversationHandler, CallbackQueryHandler, PollHandler
 import urllib.parse
 
 # Diet plan constants
@@ -172,40 +172,41 @@ async def level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     await query.edit_message_text(result)
     
-    # Move to meal suggestion quiz
+    # Move to meal suggestion poll
     protein_sources = [
-        ("Chicken 🍗", "chicken"),
-        ("Beef 🥩", "beef"),
-        ("Fish 🐟", "fish"),
-        ("Eggs 🥚", "eggs"),
-        ("Tofu 🧊", "tofu"),
-        ("Beans 🫘", "beans"),
+        "Chicken 🍗",
+        "Beef 🥩",
+        "Fish 🐟",
+        "Eggs 🥚",
+        "Tofu 🧊",
+        "Beans 🫘",
     ]
-    keyboard = [[InlineKeyboardButton(source[0], callback_data=source[1])] for source in protein_sources]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(
+    await context.bot.send_poll(
         chat_id=query.message.chat_id,
-        text="Now, let's find some meal ideas! 🍽️\nWhat's your favorite protein source?",
-        reply_markup=reply_markup,
+        question="Now, let's find some meal ideas! 🍽️\nWhat are your favorite protein sources? (You can choose multiple)",
+        options=protein_sources,
+        is_anonymous=False,
+        allows_multiple_answers=True,
+        type=Poll.REGULAR,
     )
     return MEAL_SUGGESTION
 
 async def meal_suggestion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    protein_source = query.data
+    poll_answer = update.poll_answer
+    selected_options = [context.bot_data['protein_sources'][i] for i in poll_answer.option_ids]
     
     # Create search query
-    search_query = f"{protein_source} recipes for {context.user_data['state'].goal.name.lower().replace('_', ' ')}"
+    search_query = f"{' '.join(selected_options)} recipes for {context.user_data['state'].goal.name.lower().replace('_', ' ')}"
     encoded_query = urllib.parse.quote(search_query)
     search_url = f"https://www.google.com/search?q={encoded_query}"
     
     keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        f"Great choice! 👨‍🍳 I've prepared a search for {protein_source} recipes that match your goals.\n"
-        f"Click the button below to find delicious meal ideas:",
+    await context.bot.send_message(
+        chat_id=poll_answer.user.id,
+        text=f"Great choices! 👨‍🍳 I've prepared a search for recipes with {', '.join(selected_options)} that match your goals.\n"
+             f"Click the button below to find delicious meal ideas:",
         reply_markup=reply_markup,
     )
     return ConversationHandler.END
@@ -288,12 +289,22 @@ if __name__ == '__main__':
             WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, weight)],
             GOAL: [CallbackQueryHandler(goal)],
             LEVEL: [CallbackQueryHandler(level)],
-            MEAL_SUGGESTION: [CallbackQueryHandler(meal_suggestion)],
+            MEAL_SUGGESTION: [PollHandler(meal_suggestion)],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
 
     application.add_handler(conv_handler)
+
+    # Store protein sources in bot_data for easy access
+    application.bot_data['protein_sources'] = [
+        "Chicken 🍗",
+        "Beef 🥩",
+        "Fish 🐟",
+        "Eggs 🥚",
+        "Tofu 🧊",
+        "Beans 🫘",
+    ]
 
     # Keep other handlers
     donate = CommandHandler('donate', send_donate_invoice)
