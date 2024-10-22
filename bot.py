@@ -190,21 +190,22 @@ async def process_favorite_foods(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("It seems you haven't entered any foods. Please try again!")
         return FAVORITE_FOODS
 
-    # Create search query
-    # "Here is a list of my favourite foods:
-    # [foods]
-    # please help me plan the meals for my day based on these foods
-    # I have the following constrains:
-    search_query = f"{' '.join(favorite_foods)} recipes for {user_state.goal.name.lower().replace('_', ' ')}"
-    encoded_query = urllib.parse.quote(search_query)
-    search_url = f"https://www.chatgpt.com/search?q={encoded_query}"
+    # Create ChatGPT prompt
+    prompt = f"Here is a list of my favorite foods:\n{', '.join(favorite_foods)}\n\n"
+    prompt += f"Please help me plan meals for my day based on these foods. "
+    prompt += f"I have the following constraint: {user_state.goal.name.lower().replace('_', ' ')}. "
+    prompt += f"My daily calorie target is {calories} calories and my daily protein target is {protein}g. "
+    prompt += "Please suggest a full day's meal plan including breakfast, lunch, dinner, and snacks."
 
-    keyboard = [[InlineKeyboardButton("Find Recipes 🔍", url=search_url)]]
+    encoded_prompt = urllib.parse.quote(prompt)
+    chat_url = f"https://www.chatgpt.com/?q={encoded_prompt}"
+
+    keyboard = [[InlineKeyboardButton("Get Meal Plan 🍽️", url=chat_url)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        text=f"Great choices! 👨‍🍳 I've prepared a search for recipes with {', '.join(favorite_foods)} that match your goals.\n"
-             f"Click the button below to find delicious meal ideas:",
+        text=f"Great choices! 👨‍🍳 I've prepared a prompt for ChatGPT to create a personalized meal plan based on your favorite foods and goals.\n"
+             f"Click the button below to get your custom meal plan:",
         reply_markup=reply_markup,
     )
     return ConversationHandler.END
