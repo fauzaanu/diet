@@ -1,9 +1,9 @@
 from datetime import datetime
 from enum import Enum, auto
 import os
+import psycopg2
+from psycopg2 import sql
 from dotenv import load_dotenv
-from supabase import create_client, Client
-
 
 class Goal(Enum):
     EXTREME_WEIGHT_LOSS = auto()
@@ -11,7 +11,6 @@ class Goal(Enum):
     MAINTENANCE = auto()
     MODERATE_WEIGHT_GAIN = auto()
     EXTREME_WEIGHT_GAIN = auto()
-
 
 GOAL_LEVELS = {
     Goal.EXTREME_WEIGHT_LOSS: [1, 2, 3],
@@ -29,10 +28,15 @@ LEVEL_MULTIPLIERS = {
     Goal.EXTREME_WEIGHT_GAIN: {1: 19, 2: 20, 3: 21},
 }
 
-
 load_dotenv()
 
-supabase: Client = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
+def get_db_connection():
+    return psycopg2.connect(
+        host=os.environ.get("DB_HOST"),
+        database=os.environ.get("DB_NAME"),
+        user=os.environ.get("DB_USER"),
+        password=os.environ.get("DB_PASSWORD")
+    )
 
 class UserState:
     def __init__(self, user_id):
@@ -43,45 +47,71 @@ class UserState:
         self.level = None
 
     def save_to_db(self):
-        data = {
-            "user_id": self.user_id,
-            "weight_unit": self.weight_unit,
-            "weight": self.weight,
-            "goal": self.goal.name if self.goal else None,
-            "level": self.level,
-            "last_updated": datetime.now().isoformat()
-        }
-        supabase.table("users").upsert(data).execute()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO users (user_id, weight_unit, weight, goal, level, last_updated)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO UPDATE
+                    SET weight_unit = EXCLUDED.weight_unit,
+                        weight = EXCLUDED.weight,
+                        goal = EXCLUDED.goal,
+                        level = EXCLUDED.level,
+                        last_updated = EXCLUDED.last_updated
+                """, (
+                    self.user_id,
+                    self.weight_unit,
+                    self.weight,
+                    self.goal.name if self.goal else None,
+                    self.level,
+                    datetime.now()
+                ))
+                conn.commit()
 
 def init_db():
-    # Create users table
-    supabase.table("users").create({
-        "user_id": "int8",
-        "weight_unit": "text",
-        "weight": "float8",
-        "goal": "text",
-        "level": "int2",
-        "last_updated": "timestamp"
-    }, primary_key="user_id")
-
-    # Create payments table
-    supabase.table("payments").create({
-        "payment_id": "int8",
-        "user_id": "int8",
-        "amount": "float8",
-        "currency": "text",
-        "telegram_payment_charge_id": "text",
-        "timestamp": "timestamp"
-    }, primary_key="payment_id")
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    weight_unit TEXT,
+                    weight DOUBLE PRECISION,
+                    goal TEXT,
+                    level SMALLINT,
+                    last_updated TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                    payment_id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    amount DOUBLE PRECISION,
+                    currency TEXT,
+                    telegram_payment_charge_id TEXT,
+                    timestamp TIMESTAMP
+                )
+            """)
+            conn.commit()
 
 def get_user_state(user_id):
-    response = supabase.table("users").select("*").eq("user_id", user_id).execute()
-    if response.data:
-        user_data = response.data[0]
-        user_state = UserState(user_id)
-        user_state.weight_unit = user_data["weight_unit"]
-        user_state.weight = user_data["weight"]
-        user_state.goal = Goal[user_data["goal"]] if user_data["goal"] else None
-        user_state.level = user_data["level"]
-        return user_state
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM users WHERE user_id = %s", (user_id,))
+            user_data = cur.fetchone()
+            if user_data:
+                user_state = UserState(user_id)
+                user_state.weight_unit = user_data[1]
+                user_state.weight = user_data[2]
+                user_state.goal = Goal[user_data[3]] if user_data[3] else None
+                user_state.level = user_data[4]
+                return user_state
     return None
+
+def save_payment(user_id, amount, currency, charge_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO payments (user_id, amount, currency, telegram_payment_charge_id, timestamp)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (user_id, amount, currency, charge_id, datetime.now()))
+            conn.commit()

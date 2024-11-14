@@ -1,6 +1,5 @@
 import logging
 import os
-from supabase import create_client, Client
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -18,7 +17,7 @@ from telegram.ext import (
 )
 import urllib.parse
 
-from database import UserState, Goal, GOAL_LEVELS, LEVEL_MULTIPLIERS, init_db, get_user_state, supabase
+from database import UserState, Goal, GOAL_LEVELS, LEVEL_MULTIPLIERS, init_db, get_user_state, save_payment
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -250,14 +249,7 @@ async def successful_payment_callback(
     currency = payment.currency
     charge_id = payment.telegram_payment_charge_id
 
-    data = {
-        "user_id": user_id,
-        "amount": amount,
-        "currency": currency,
-        "telegram_payment_charge_id": charge_id,
-        "timestamp": datetime.now().isoformat()
-    }
-    supabase.table("payments").insert(data).execute()
+    save_payment(user_id, amount, currency, charge_id)
 
     await update.message.reply_text(
         f"Thank you for your donation of {amount} {currency}!"
