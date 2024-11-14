@@ -1,9 +1,10 @@
 from datetime import datetime
 from enum import Enum, auto
 import os
-import psycopg2
-from psycopg2 import sql
+import psycopg
+from psycopg import sql
 from dotenv import load_dotenv
+
 
 class Goal(Enum):
     EXTREME_WEIGHT_LOSS = auto()
@@ -11,6 +12,7 @@ class Goal(Enum):
     MAINTENANCE = auto()
     MODERATE_WEIGHT_GAIN = auto()
     EXTREME_WEIGHT_GAIN = auto()
+
 
 GOAL_LEVELS = {
     Goal.EXTREME_WEIGHT_LOSS: [1, 2, 3],
@@ -30,13 +32,16 @@ LEVEL_MULTIPLIERS = {
 
 load_dotenv()
 
+
 def get_db_connection():
-    return psycopg2.connect(
+    return psycopg.connect(
         host=os.environ.get("DB_HOST"),
-        database=os.environ.get("DB_NAME"),
+        dbname=os.environ.get("DB_NAME"),  # Corrected from `name` to `dbname`
+        port=os.environ.get("DB_PORT"),
         user=os.environ.get("DB_USER"),
-        password=os.environ.get("DB_PASSWORD")
+        password=os.environ.get("DB_PASSWORD"),
     )
+
 
 class UserState:
     def __init__(self, user_id):
@@ -49,7 +54,8 @@ class UserState:
     def save_to_db(self):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO users (user_id, weight_unit, weight, goal, level, last_updated)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id) DO UPDATE
@@ -58,15 +64,18 @@ class UserState:
                         goal = EXCLUDED.goal,
                         level = EXCLUDED.level,
                         last_updated = EXCLUDED.last_updated
-                """, (
-                    self.user_id,
-                    self.weight_unit,
-                    self.weight,
-                    self.goal.name if self.goal else None,
-                    self.level,
-                    datetime.now()
-                ))
+                """,
+                    (
+                        self.user_id,
+                        self.weight_unit,
+                        self.weight,
+                        self.goal.name if self.goal else None,
+                        self.level,
+                        datetime.now(),
+                    ),
+                )
                 conn.commit()
+
 
 def init_db():
     with get_db_connection() as conn:
@@ -93,6 +102,7 @@ def init_db():
             """)
             conn.commit()
 
+
 def get_user_state(user_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -107,11 +117,15 @@ def get_user_state(user_id):
                 return user_state
     return None
 
+
 def save_payment(user_id, amount, currency, charge_id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO payments (user_id, amount, currency, telegram_payment_charge_id, timestamp)
                 VALUES (%s, %s, %s, %s, %s)
-            """, (user_id, amount, currency, charge_id, datetime.now()))
+            """,
+                (user_id, amount, currency, charge_id, datetime.now()),
+            )
             conn.commit()

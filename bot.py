@@ -30,7 +30,7 @@ WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, FAVORITE_FOODS, RESULT = range(6)
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     user_state = get_user_state(user_id)
-    
+
     if user_state:
         # User exists, ask if they want to start over
         keyboard = [
@@ -259,9 +259,9 @@ async def successful_payment_callback(
 if __name__ == "__main__":
     load_dotenv()
     token = os.environ["TELEGRAM_BOT_TOKEN"]
-    dev_mode = os.environ.get("DEV_MODE", "False").lower() == "true"
+    dev_mode = os.environ.get("DEV_MODE", "False").lower() == "True"
     init_db()
-    
+
     application = Application.builder().token(token).build()
 
     # Add conversation handler
@@ -297,7 +297,13 @@ if __name__ == "__main__":
         # Webhook settings
         webhook_url = os.environ.get("WEBHOOK_URL")
         port = int(os.environ.get("PORT", 8443))
-        
+
+        # Set webhook
+        application.bot.set_webhook(
+            url=f"{webhook_url}/{token}",
+            drop_pending_updates=True
+        )
+
         application.run_webhook(
             listen="0.0.0.0",
             port=port,
