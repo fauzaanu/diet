@@ -1,6 +1,8 @@
-import sqlite3
 from datetime import datetime
 from enum import Enum, auto
+import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
 
 class Goal(Enum):
@@ -28,6 +30,10 @@ LEVEL_MULTIPLIERS = {
 }
 
 
+load_dotenv()
+
+supabase: Client = create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
+
 class UserState:
     def __init__(self, user_id):
         self.user_id = user_id
@@ -37,42 +43,45 @@ class UserState:
         self.level = None
 
     def save_to_db(self):
-        conn = sqlite3.connect("diet_bot.db")
-        c = conn.cursor()
-        c.execute(
-            """INSERT OR REPLACE INTO users
-                     (user_id, weight_unit, weight, goal, level, last_updated)
-                     VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                self.user_id,
-                self.weight_unit,
-                self.weight,
-                self.goal.name if self.goal else None,
-                self.level,
-                datetime.now(),
-            ),
-        )
-        conn.commit()
-        conn.close()
-
+        data = {
+            "user_id": self.user_id,
+            "weight_unit": self.weight_unit,
+            "weight": self.weight,
+            "goal": self.goal.name if self.goal else None,
+            "level": self.level,
+            "last_updated": datetime.now().isoformat()
+        }
+        supabase.table("users").upsert(data).execute()
 
 def init_db():
-    conn = sqlite3.connect("diet_bot.db")
-    c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS users
-                 (user_id INTEGER PRIMARY KEY,
-                  weight_unit TEXT,
-                  weight REAL,
-                  goal TEXT,
-                  level INTEGER,
-                  last_updated TIMESTAMP)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS payments
-                 (payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  user_id INTEGER,
-                  amount REAL,
-                  currency TEXT,
-                  telegram_payment_charge_id TEXT,
-                  timestamp TIMESTAMP,
-                  FOREIGN KEY (user_id) REFERENCES users (user_id))""")
-    conn.commit()
-    conn.close()
+    # Create users table
+    supabase.table("users").create({
+        "user_id": "int8",
+        "weight_unit": "text",
+        "weight": "float8",
+        "goal": "text",
+        "level": "int2",
+        "last_updated": "timestamp"
+    }, primary_key="user_id")
+
+    # Create payments table
+    supabase.table("payments").create({
+        "payment_id": "int8",
+        "user_id": "int8",
+        "amount": "float8",
+        "currency": "text",
+        "telegram_payment_charge_id": "text",
+        "timestamp": "timestamp"
+    }, primary_key="payment_id")
+
+def get_user_state(user_id):
+    response = supabase.table("users").select("*").eq("user_id", user_id).execute()
+    if response.data:
+        user_data = response.data[0]
+        user_state = UserState(user_id)
+        user_state.weight_unit = user_data["weight_unit"]
+        user_state.weight = user_data["weight"]
+        user_state.goal = Goal[user_data["goal"]] if user_data["goal"] else None
+        user_state.level = user_data["level"]
+        return user_state
+    return None

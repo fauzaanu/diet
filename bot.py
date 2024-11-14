@@ -1,6 +1,6 @@
 import logging
 import os
-import sqlite3
+from supabase import create_client, Client
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 import urllib.parse
 
-from database import UserState, Goal, GOAL_LEVELS, LEVEL_MULTIPLIERS, init_db
+from database import UserState, Goal, GOAL_LEVELS, LEVEL_MULTIPLIERS, init_db, get_user_state, supabase
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -29,21 +29,37 @@ WEIGHT_UNIT, WEIGHT, GOAL, LEVEL, FAVORITE_FOODS, RESULT = range(6)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    keyboard = [
-        [
-            InlineKeyboardButton("kg 🇪🇺", callback_data="kg"),
-            InlineKeyboardButton("lbs 🇺🇸", callback_data="lbs"),
+    user_state = get_user_state(user_id)
+    
+    if user_state:
+        # User exists, ask if they want to start over
+        keyboard = [
+            [InlineKeyboardButton("Start Over", callback_data="start_over")],
+            [InlineKeyboardButton("Continue", callback_data="continue")]
         ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "👋 Welcome to the Diet Plan Bot! 🥗💪\n\n"
-        "Let's create a personalized plan based on Alex Hormozi's method.\n\n"
-        "First, please choose your preferred weight unit:",
-        reply_markup=reply_markup,
-    )
-    context.user_data["state"] = UserState(user_id)
-    return WEIGHT_UNIT
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Welcome back! 👋 Do you want to start over or continue with your existing plan?",
+            reply_markup=reply_markup
+        )
+        return WEIGHT_UNIT
+    else:
+        # New user, start from the beginning
+        keyboard = [
+            [
+                InlineKeyboardButton("kg 🇪🇺", callback_data="kg"),
+                InlineKeyboardButton("lbs 🇺🇸", callback_data="lbs"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "👋 Welcome to the Diet Plan Bot! 🥗💪\n\n"
+            "Let's create a personalized plan based on Alex Hormozi's method.\n\n"
+            "First, please choose your preferred weight unit:",
+            reply_markup=reply_markup,
+        )
+        context.user_data["state"] = UserState(user_id)
+        return WEIGHT_UNIT
 
 
 async def weight_unit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -233,16 +249,14 @@ async def successful_payment_callback(
     currency = payment.currency
     charge_id = payment.telegram_payment_charge_id
 
-    conn = sqlite3.connect("diet_bot.db")
-    c = conn.cursor()
-    c.execute(
-        """INSERT INTO payments
-                 (user_id, amount, currency, telegram_payment_charge_id, timestamp)
-                 VALUES (?, ?, ?, ?, ?)""",
-        (user_id, amount, currency, charge_id, datetime.now()),
-    )
-    conn.commit()
-    conn.close()
+    data = {
+        "user_id": user_id,
+        "amount": amount,
+        "currency": currency,
+        "telegram_payment_charge_id": charge_id,
+        "timestamp": datetime.now().isoformat()
+    }
+    supabase.table("payments").insert(data).execute()
 
     await update.message.reply_text(
         f"Thank you for your donation of {amount} {currency}!"
