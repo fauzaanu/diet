@@ -5,6 +5,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice
+from telegram.ext import Application
 from telegram.ext import (
     filters,
     MessageHandler,
@@ -266,8 +267,10 @@ async def successful_payment_callback(
 if __name__ == "__main__":
     load_dotenv()
     token = os.environ["TELEGRAM_BOT_TOKEN"]
+    dev_mode = os.environ.get("DEV_MODE", "False").lower() == "true"
     init_db()
-    application = ApplicationBuilder().token(token).build()
+    
+    application = Application.builder().token(token).build()
 
     # Add conversation handler
     conv_handler = ConversationHandler(
@@ -298,4 +301,16 @@ if __name__ == "__main__":
     # Pre-checkout handler to final check
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
 
-    application.run_polling()
+    if dev_mode:
+        # Webhook settings
+        webhook_url = os.environ.get("WEBHOOK_URL")
+        port = int(os.environ.get("PORT", 8443))
+        
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=token,
+            webhook_url=f"{webhook_url}/{token}"
+        )
+    else:
+        application.run_polling()
